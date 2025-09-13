@@ -93,7 +93,7 @@ export default function ProviderCard({ provider, location, availableSlots, onBoo
       </div>
       
       {/* Insurance and Optum Information */}
-      {(insuranceAccepted.length > 0 || hasOptumData) && (
+      {(insuranceAccepted.length > 0 || Boolean(hasOptumData)) && (
         <div className="mt-4 p-4 bg-muted/30 rounded-lg">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center space-x-2">
@@ -209,7 +209,7 @@ export default function ProviderCard({ provider, location, availableSlots, onBoo
           <Badge variant="outline" className="text-muted-foreground">
             {availableSlots.length} slots
           </Badge>
-          {hasOptumData && (
+          {Boolean(hasOptumData) && (
             <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-xs">
               Optum Verified
             </Badge>
