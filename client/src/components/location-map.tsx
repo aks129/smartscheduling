@@ -20,28 +20,42 @@ export default function LocationMap({ locations, selectedProvider }: LocationMap
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
+    // Check if we have a valid API key
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    if (!apiKey || apiKey === 'YOUR_API_KEY') {
+      setHasError(true);
+      return;
+    }
+
     const initializeMap = () => {
-      if (!mapRef.current || !window.google) return;
+      try {
+        if (!mapRef.current || !window.google || !window.google.maps) return;
 
-      // Default to Boston, MA
-      const defaultCenter = { lat: 42.3601, lng: -71.0589 };
-      
-      mapInstanceRef.current = new window.google.maps.Map(mapRef.current, {
-        zoom: 10,
-        center: defaultCenter,
-        mapTypeId: window.google.maps.MapTypeId.ROADMAP,
-        styles: [
-          {
-            featureType: "poi",
-            elementType: "labels",
-            stylers: [{ visibility: "off" }]
-          }
-        ]
-      });
+        // Default to Boston, MA
+        const defaultCenter = { lat: 42.3601, lng: -71.0589 };
+        
+        mapInstanceRef.current = new window.google.maps.Map(mapRef.current, {
+          zoom: 10,
+          center: defaultCenter,
+          mapTypeId: window.google.maps.MapTypeId.ROADMAP,
+          styles: [
+            {
+              featureType: "poi",
+              elementType: "labels",
+              stylers: [{ visibility: "off" }]
+            }
+          ]
+        });
 
-      setIsMapLoaded(true);
+        setIsMapLoaded(true);
+        setHasError(false);
+      } catch (error) {
+        console.error('Error initializing Google Maps:', error);
+        setHasError(true);
+      }
     };
 
     // Check if Google Maps is already loaded
@@ -54,19 +68,55 @@ export default function LocationMap({ locations, selectedProvider }: LocationMap
       // Load Google Maps API if not already loaded
       if (!document.querySelector('script[src*="maps.googleapis.com"]')) {
         const script = document.createElement('script');
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'YOUR_API_KEY'}&callback=initMap&libraries=places`;
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMap&libraries=places`;
         script.async = true;
         script.defer = true;
+        script.onerror = () => setHasError(true);
         document.head.appendChild(script);
       }
     }
+
+    // Cleanup function
+    return () => {
+      // Clear markers safely
+      if (markersRef.current && markersRef.current.length > 0) {
+        markersRef.current.forEach(marker => {
+          try {
+            if (marker && typeof marker.setMap === 'function') {
+              marker.setMap(null);
+            }
+          } catch (e) {
+            // Ignore cleanup errors
+          }
+        });
+        markersRef.current = [];
+      }
+      
+      // Clear map instance reference
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current = null;
+      }
+      
+      // Clear map container content only if we have a reference and it exists in DOM
+      if (mapRef.current && mapRef.current.parentNode) {
+        try {
+          mapRef.current.innerHTML = '';
+        } catch (e) {
+          // Ignore DOM cleanup errors
+        }
+      }
+    };
   }, []);
 
   useEffect(() => {
-    if (!isMapLoaded || !mapInstanceRef.current) return;
+    if (!isMapLoaded || !mapInstanceRef.current || hasError) return;
 
-    // Clear existing markers
-    markersRef.current.forEach(marker => marker.setMap(null));
+    // Clear existing markers safely
+    markersRef.current.forEach(marker => {
+      if (marker && marker.setMap) {
+        marker.setMap(null);
+      }
+    });
     markersRef.current = [];
 
     // Add markers for each location
@@ -153,10 +203,14 @@ export default function LocationMap({ locations, selectedProvider }: LocationMap
     }
 
     // Fit map to show all markers if we have coordinates
-    if (locations.some(loc => loc.position)) {
-      mapInstanceRef.current.fitBounds(bounds);
+    if (locations.some(loc => loc.position) && markersRef.current.length > 0) {
+      try {
+        mapInstanceRef.current.fitBounds(bounds);
+      } catch (error) {
+        console.error('Error fitting map bounds:', error);
+      }
     }
-  }, [locations, isMapLoaded]);
+  }, [locations, isMapLoaded, hasError]);
 
   return (
     <div className="bg-card rounded-lg border border-border p-4 shadow-sm" data-testid="location-map">
@@ -175,7 +229,15 @@ export default function LocationMap({ locations, selectedProvider }: LocationMap
         className="h-64 bg-muted rounded-lg relative overflow-hidden"
         data-testid="map-container"
       >
-        {!isMapLoaded && (
+        {hasError ? (
+          <div className="absolute inset-0 bg-gradient-to-br from-muted/50 to-muted/30 flex items-center justify-center">
+            <div className="text-center z-10">
+              <MapPin className="w-12 h-12 text-muted-foreground mx-auto mb-2" />
+              <p className="text-muted-foreground">Map temporarily unavailable</p>
+              <p className="text-xs text-muted-foreground mt-1">Provider locations listed above</p>
+            </div>
+          </div>
+        ) : !isMapLoaded ? (
           <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center">
             <div className="text-center z-10">
               <MapPin className="w-12 h-12 text-muted-foreground mx-auto mb-2" />
@@ -183,7 +245,7 @@ export default function LocationMap({ locations, selectedProvider }: LocationMap
               <div className="animate-spin w-4 h-4 border-2 border-primary border-t-transparent rounded-full mx-auto mt-2"></div>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
       
       <div className="mt-3 flex items-center text-xs text-muted-foreground">
