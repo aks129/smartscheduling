@@ -247,14 +247,15 @@ export class MemStorage implements IStorage {
 
     if (filters.location) {
       const locationQuery = filters.location.toLowerCase();
-      locations = locations.filter(l => 
-        l.name.toLowerCase().includes(locationQuery) ||
-        (l.address && typeof l.address === 'object' && 
-         ('city' in l.address && typeof (l.address as any).city === 'string' && 
-          (l.address as any).city.toLowerCase().includes(locationQuery)) ||
-         ('state' in l.address && typeof (l.address as any).state === 'string' && 
-          (l.address as any).state.toLowerCase().includes(locationQuery)))
-      );
+      locations = locations.filter(l => {
+        const address = l.address as any;
+        return l.name.toLowerCase().includes(locationQuery) ||
+          (address && typeof address === 'object' && 
+           ('city' in address && typeof address.city === 'string' && 
+            address.city.toLowerCase().includes(locationQuery)) ||
+           ('state' in address && typeof address.state === 'string' && 
+            address.state.toLowerCase().includes(locationQuery)));
+      });
     }
 
     if (filters.availableOnly) {
