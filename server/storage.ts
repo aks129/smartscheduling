@@ -107,7 +107,14 @@ export class MemStorage implements IStorage {
       identifier: insertRole.identifier || null,
       active: insertRole.active ?? true,
       organization: insertRole.organization || null,
-      telecom: insertRole.telecom || null
+      telecom: insertRole.telecom || null,
+      npi: insertRole.npi || null,
+      insuranceAccepted: insertRole.insuranceAccepted || null,
+      optumData: insertRole.optumData || null,
+      languagesSpoken: insertRole.languagesSpoken || null,
+      education: insertRole.education || null,
+      boardCertifications: insertRole.boardCertifications || null,
+      hospitalAffiliations: insertRole.hospitalAffiliations || null
     };
     this.practitionerRoles.set(role.id, role);
     return role;
@@ -300,7 +307,14 @@ export class MemStorage implements IStorage {
         identifier: insertRole.identifier || null,
         active: insertRole.active ?? true,
         organization: insertRole.organization || null,
-        telecom: insertRole.telecom || null
+        telecom: insertRole.telecom || null,
+        npi: insertRole.npi || null,
+        insuranceAccepted: insertRole.insuranceAccepted || null,
+        optumData: insertRole.optumData || null,
+        languagesSpoken: insertRole.languagesSpoken || null,
+        education: insertRole.education || null,
+        boardCertifications: insertRole.boardCertifications || null,
+        hospitalAffiliations: insertRole.hospitalAffiliations || null
       };
       this.practitionerRoles.set(role.id, role);
       roles.push(role);
@@ -336,6 +350,39 @@ export class MemStorage implements IStorage {
       slots.push(slot);
     }
     return slots;
+  }
+
+  // Optum provider enrichment
+  async enrichPractitionerWithOptumData(practitionerId: string, optumData: {
+    npi?: string;
+    insuranceAccepted?: any;
+    optumData?: any;
+    languagesSpoken?: any;
+    education?: any;
+    boardCertifications?: any;
+    hospitalAffiliations?: any;
+  }): Promise<PractitionerRole | undefined> {
+    const existing = this.practitionerRoles.get(practitionerId);
+    if (!existing) return undefined;
+
+    const enriched: PractitionerRole = {
+      ...existing,
+      npi: optumData.npi || existing.npi,
+      insuranceAccepted: optumData.insuranceAccepted || existing.insuranceAccepted,
+      optumData: optumData.optumData || existing.optumData,
+      languagesSpoken: optumData.languagesSpoken || existing.languagesSpoken,
+      education: optumData.education || existing.education,
+      boardCertifications: optumData.boardCertifications || existing.boardCertifications,
+      hospitalAffiliations: optumData.hospitalAffiliations || existing.hospitalAffiliations,
+      updatedAt: new Date(),
+    };
+
+    this.practitionerRoles.set(practitionerId, enriched);
+    return enriched;
+  }
+
+  async findPractitionerByNPI(npi: string): Promise<PractitionerRole | undefined> {
+    return Array.from(this.practitionerRoles.values()).find(role => role.npi === npi);
   }
 }
 

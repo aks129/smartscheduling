@@ -26,6 +26,14 @@ export const practitionerRoles = pgTable("practitioner_roles", {
   specialty: jsonb("specialty").notNull(),
   location: jsonb("location").notNull(),
   telecom: jsonb("telecom"),
+  // Optum provider directory enrichment fields
+  npi: text("npi"), // National Provider Identifier from Optum
+  insuranceAccepted: jsonb("insurance_accepted"), // List of accepted insurance plans
+  optumData: jsonb("optum_data"), // Additional Optum provider information
+  languagesSpoken: jsonb("languages_spoken"), // Languages spoken by provider
+  education: jsonb("education"), // Educational background
+  boardCertifications: jsonb("board_certifications"), // Board certifications
+  hospitalAffiliations: jsonb("hospital_affiliations"), // Hospital affiliations
   updatedAt: timestamp("updated_at").default(sql`NOW()`),
 });
 

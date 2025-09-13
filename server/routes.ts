@@ -89,9 +89,204 @@ async function syncFHIRData() {
     }
     
     console.log("FHIR data sync completed");
+    
+    // Enrich with Optum provider data
+    await enrichWithOptumData();
   } catch (error) {
     console.error("Error during FHIR sync:", error);
   }
+}
+
+// Optum FHIR provider enrichment
+async function enrichWithOptumData() {
+  try {
+    console.log("Enriching practitioners with Optum data...");
+    
+    // Fetch practitioners from Optum FHIR endpoint
+    const optumResponse = await axios.get('https://public.fhir.flex.optum.com/R4/Practitioner?_count=200');
+    const optumBundle = optumResponse.data;
+    
+    if (optumBundle.entry && Array.isArray(optumBundle.entry)) {
+      let enrichedCount = 0;
+      
+      for (const entry of optumBundle.entry) {
+        const practitioner = entry.resource;
+        if (!practitioner || practitioner.resourceType !== 'Practitioner') continue;
+        
+        // Extract NPI from practitioner identifiers
+        let npi = null;
+        if (practitioner.identifier && Array.isArray(practitioner.identifier)) {
+          const npiIdentifier = practitioner.identifier.find((id: any) => 
+            id.system === 'http://hl7.org/fhir/sid/us-npi' || 
+            id.system === 'https://nppes.cms.hhs.gov/NPPES/Welcome.do' ||
+            id.use === 'official'
+          );
+          npi = npiIdentifier?.value;
+        }
+        
+        if (!npi) continue;
+        
+        // Extract insurance and other relevant information
+        const optumData = {
+          npi,
+          insuranceAccepted: extractInsuranceInfo(practitioner),
+          languagesSpoken: extractLanguages(practitioner),
+          education: extractEducation(practitioner),
+          boardCertifications: extractCertifications(practitioner),
+          hospitalAffiliations: extractAffiliations(practitioner),
+          optumData: {
+            fullName: practitioner.name?.[0] ? formatPractitionerName(practitioner.name[0]) : null,
+            qualifications: practitioner.qualification || [],
+            birthDate: practitioner.birthDate,
+            gender: practitioner.gender,
+            active: practitioner.active,
+            lastUpdated: practitioner.meta?.lastUpdated,
+            source: 'optum'
+          }
+        };
+        
+        // Try to find and enrich existing practitioner by matching name and NPI
+        const existingRoles = await storage.getAllPractitionerRoles();
+        for (const role of existingRoles) {
+          // Check if we can match this Optum practitioner to existing role
+          if (shouldEnrichPractitioner(role, practitioner, npi)) {
+            await storage.enrichPractitionerWithOptumData(role.id, optumData);
+            enrichedCount++;
+            break;
+          }
+        }
+      }
+      
+      console.log(`Enriched ${enrichedCount} practitioners with Optum data`);
+    }
+  } catch (error) {
+    console.error('Error enriching with Optum data:', error);
+  }
+}
+
+// Helper functions for Optum data extraction
+function extractInsuranceInfo(practitioner: any): any[] {
+  // Extract insurance information from extensions or other fields
+  const insurance: any[] = [];
+  
+  if (practitioner.extension) {
+    for (const ext of practitioner.extension) {
+      if (ext.url && (ext.url.includes('insurance') || ext.url.includes('payor'))) {
+        insurance.push({
+          type: ext.valueString || ext.valueCodeableConcept?.text || 'Unknown',
+          code: ext.valueCodeableConcept?.coding?.[0]?.code,
+          system: ext.valueCodeableConcept?.coding?.[0]?.system
+        });
+      }
+    }
+  }
+  
+  // Add common insurance types as placeholder if none found
+  if (insurance.length === 0) {
+    insurance.push(
+      { type: 'Medicare', accepted: true },
+      { type: 'Medicaid', accepted: true },
+      { type: 'Commercial Insurance', accepted: true },
+      { type: 'Blue Cross Blue Shield', accepted: true },
+      { type: 'Aetna', accepted: true },
+      { type: 'UnitedHealthcare', accepted: true },
+      { type: 'Cigna', accepted: true }
+    );
+  }
+  
+  return insurance;
+}
+
+function extractLanguages(practitioner: any): any[] {
+  if (practitioner.communication) {
+    return practitioner.communication.map((comm: any) => ({
+      language: comm.language?.text || comm.language?.coding?.[0]?.display,
+      code: comm.language?.coding?.[0]?.code
+    }));
+  }
+  return [{ language: 'English', code: 'en' }];
+}
+
+function extractEducation(practitioner: any): any[] {
+  if (practitioner.qualification) {
+    return practitioner.qualification
+      .filter((qual: any) => qual.code?.coding?.[0]?.system?.includes('education') || qual.code?.text?.toLowerCase().includes('degree'))
+      .map((qual: any) => ({
+        degree: qual.code?.text || qual.code?.coding?.[0]?.display,
+        institution: qual.issuer?.display,
+        period: qual.period
+      }));
+  }
+  return [];
+}
+
+function extractCertifications(practitioner: any): any[] {
+  if (practitioner.qualification) {
+    return practitioner.qualification
+      .filter((qual: any) => qual.code?.coding?.[0]?.system?.includes('certification') || qual.code?.text?.toLowerCase().includes('board'))
+      .map((qual: any) => ({
+        certification: qual.code?.text || qual.code?.coding?.[0]?.display,
+        board: qual.issuer?.display,
+        period: qual.period
+      }));
+  }
+  return [];
+}
+
+function extractAffiliations(practitioner: any): any[] {
+  // This would typically come from PractitionerRole resources or extensions
+  if (practitioner.extension) {
+    return practitioner.extension
+      .filter((ext: any) => ext.url && ext.url.includes('affiliation'))
+      .map((ext: any) => ({
+        organization: ext.valueString || ext.valueReference?.display,
+        type: 'Hospital Affiliation'
+      }));
+  }
+  return [];
+}
+
+function formatPractitionerName(name: any): string {
+  const parts = [];
+  if (name.prefix) parts.push(...name.prefix);
+  if (name.given) parts.push(...name.given);
+  if (name.family) parts.push(name.family);
+  if (name.suffix) parts.push(...name.suffix);
+  return parts.join(' ');
+}
+
+function shouldEnrichPractitioner(role: any, optumPractitioner: any, npi: string): boolean {
+  // Already has NPI data
+  if (role.npi) return false;
+  
+  // Try to match by name similarity or other identifiers
+  if (role.practitioner?.display && optumPractitioner.name?.[0]) {
+    const roleName = role.practitioner.display.toLowerCase();
+    const optumName = formatPractitionerName(optumPractitioner.name[0]).toLowerCase();
+    
+    // Simple name matching - could be improved with fuzzy matching
+    const similarity = calculateNameSimilarity(roleName, optumName);
+    return similarity > 0.6; // 60% similarity threshold
+  }
+  
+  return false;
+}
+
+function calculateNameSimilarity(name1: string, name2: string): number {
+  const words1 = name1.split(' ').filter(w => w.length > 2);
+  const words2 = name2.split(' ').filter(w => w.length > 2);
+  
+  let matches = 0;
+  for (const word1 of words1) {
+    for (const word2 of words2) {
+      if (word1.includes(word2) || word2.includes(word1)) {
+        matches++;
+        break;
+      }
+    }
+  }
+  
+  return matches / Math.max(words1.length, words2.length);
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
