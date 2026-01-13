@@ -9,6 +9,10 @@
     {
       "source": "/fhir/(.*)",
       "destination": "/api"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
