@@ -615,10 +615,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         storage.getAllSlots(),
       ]);
 
+      // Extract unique states from locations
+      const states = new Set<string>();
+      locations.forEach(location => {
+        if (location.address && typeof location.address === 'object' && 'state' in location.address) {
+          const state = location.address.state;
+          if (typeof state === 'string' && state.length > 0) {
+            states.add(state);
+          }
+        }
+      });
+
       const manifest = {
+        operationDefinition: "http://hl7.org/fhir/uv/bulkdata/OperationDefinition/bulk-publish|1.0.0",
         transactionTime: new Date().toISOString(),
         request: `${req.method} ${req.originalUrl}`,
         requiresAccessToken: false,
+        outputFormat: "application/fhir+ndjson",
         output: [
           {
             type: "Location",
@@ -639,6 +652,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             type: "Slot",
             url: `${baseUrl}/fhir/data/slots.ndjson`,
             count: slots.length,
+            ...(states.size > 0 && {
+              extension: {
+                state: Array.from(states).sort()
+              }
+            })
           },
         ],
         error: [],

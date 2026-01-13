@@ -227,9 +227,14 @@ Currently no authentication required (open API for Connectathon).
         BulkPublishManifest: {
           type: 'object',
           properties: {
+            operationDefinition: {
+              type: 'string',
+              example: 'http://hl7.org/fhir/uv/bulkdata/OperationDefinition/bulk-publish|1.0.0'
+            },
             transactionTime: { type: 'string', format: 'date-time' },
             request: { type: 'string', example: 'GET /fhir/$bulk-publish' },
             requiresAccessToken: { type: 'boolean', example: false },
+            outputFormat: { type: 'string', example: 'application/fhir+ndjson' },
             output: {
               type: 'array',
               items: {
@@ -237,7 +242,18 @@ Currently no authentication required (open API for Connectathon).
                 properties: {
                   type: { type: 'string', example: 'Slot' },
                   url: { type: 'string', example: 'https://example.com/fhir/data/slots.ndjson' },
-                  count: { type: 'number', example: 150 }
+                  count: { type: 'number', example: 150 },
+                  extension: {
+                    type: 'object',
+                    properties: {
+                      state: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        example: ['FL', 'MA', 'NY'],
+                        description: 'US states covered by the slots in this resource'
+                      }
+                    }
+                  }
                 }
               }
             },
