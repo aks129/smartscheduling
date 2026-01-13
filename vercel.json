@@ -1,15 +1,7 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run build && cp public/api-docs.html dist/public/",
   "outputDirectory": "dist/public",
   "rewrites": [
-    {
-      "source": "/api-docs",
-      "destination": "/api"
-    },
-    {
-      "source": "/api-docs/(.*)",
-      "destination": "/api"
-    },
     {
       "source": "/api-docs.json",
       "destination": "/api"
