@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, Calendar, User } from "lucide-react";
+import { Bell, Calendar, User, BookOpen, FileText, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import SearchFilters from "@/components/search-filters";
 import ProviderCard from "@/components/provider-card";
@@ -100,6 +100,55 @@ export default function Home() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Documentation Banner */}
+        <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 mb-6">
+          <div className="flex items-start justify-between">
+            <div className="flex items-start space-x-3">
+              <BookOpen className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
+              <div>
+                <h3 className="font-semibold text-foreground mb-1">
+                  HL7 FHIR Connectathon 41 - Patient Scheduling Track
+                </h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  This application implements SMART Scheduling Links IG in both Client and Slot Directory roles.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <a
+                    href="https://github.com/aks129/smartscheduling/blob/main/README.md"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md transition-colors"
+                  >
+                    <FileText className="w-4 h-4 mr-1.5" />
+                    README
+                    <ExternalLink className="w-3 h-3 ml-1.5" />
+                  </a>
+                  <a
+                    href="https://github.com/aks129/smartscheduling/blob/main/docs/CONNECTATHON_GUIDE.md"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md transition-colors"
+                  >
+                    <BookOpen className="w-4 h-4 mr-1.5" />
+                    Connectathon Guide
+                    <ExternalLink className="w-3 h-3 ml-1.5" />
+                  </a>
+                  <a
+                    href="/fhir/$bulk-publish"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md transition-colors"
+                  >
+                    <FileText className="w-4 h-4 mr-1.5" />
+                    Bulk Publish API
+                    <ExternalLink className="w-3 h-3 ml-1.5" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Search and Filters Section */}
         <SearchFilters onSearch={handleSearch} />
 
@@ -215,13 +264,108 @@ export default function Home() {
         onClose={() => setIsBookingModalOpen(false)}
         provider={selectedProvider}
         slot={selectedSlot}
-        location={selectedProvider ? displayLocations.find(loc => 
-          Array.isArray(selectedProvider.location) && 
-          selectedProvider.location.some((locRef: any) => 
+        location={selectedProvider ? displayLocations.find(loc =>
+          Array.isArray(selectedProvider.location) &&
+          selectedProvider.location.some((locRef: any) =>
             locRef.reference === `Location/${loc.id}`
           )
         ) : undefined}
       />
+
+      {/* Footer */}
+      <footer className="bg-card border-t border-border mt-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div>
+              <h3 className="font-semibold text-foreground mb-3">About</h3>
+              <p className="text-sm text-muted-foreground">
+                SMART Healthcare Scheduling Platform implementing FHIR R4 and SMART Scheduling Links IG for Connectathon 41.
+              </p>
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground mb-3">Documentation</h3>
+              <ul className="space-y-2 text-sm">
+                <li>
+                  <a
+                    href="https://github.com/aks129/smartscheduling/blob/main/README.md"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline inline-flex items-center"
+                  >
+                    README
+                    <ExternalLink className="w-3 h-3 ml-1" />
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="https://github.com/aks129/smartscheduling/blob/main/docs/CONNECTATHON_GUIDE.md"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline inline-flex items-center"
+                  >
+                    Connectathon Guide
+                    <ExternalLink className="w-3 h-3 ml-1" />
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="https://github.com/aks129/smartscheduling/blob/main/CLAUDE.md"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline inline-flex items-center"
+                  >
+                    Developer Guide
+                    <ExternalLink className="w-3 h-3 ml-1" />
+                  </a>
+                </li>
+              </ul>
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground mb-3">API Endpoints</h3>
+              <ul className="space-y-2 text-sm">
+                <li>
+                  <a
+                    href="/fhir/$bulk-publish"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline inline-flex items-center"
+                  >
+                    Bulk Publish Manifest
+                    <ExternalLink className="w-3 h-3 ml-1" />
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="/api/health"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline inline-flex items-center"
+                  >
+                    Health Check
+                    <ExternalLink className="w-3 h-3 ml-1" />
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="https://github.com/aks129/smartscheduling"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline inline-flex items-center"
+                  >
+                    GitHub Repository
+                    <ExternalLink className="w-3 h-3 ml-1" />
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div className="border-t border-border mt-8 pt-6 text-center text-sm text-muted-foreground">
+            <p>
+              Built for HL7 FHIR Connectathon 41 Patient Scheduling Track • FHIR R4 • SMART Scheduling Links IG
+            </p>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
