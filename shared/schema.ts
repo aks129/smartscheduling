@@ -12,6 +12,7 @@ export const locations = pgTable("locations", {
   identifier: jsonb("identifier"),
   description: text("description"),
   position: jsonb("position"),
+  publisherUrl: text("publisher_url"), // Source publisher URL for multi-source tracking
   updatedAt: timestamp("updated_at").default(sql`NOW()`),
 });
 
@@ -34,6 +35,7 @@ export const practitionerRoles = pgTable("practitioner_roles", {
   education: jsonb("education"), // Educational background
   boardCertifications: jsonb("board_certifications"), // Board certifications
   hospitalAffiliations: jsonb("hospital_affiliations"), // Hospital affiliations
+  publisherUrl: text("publisher_url"), // Source publisher URL for multi-source tracking
   updatedAt: timestamp("updated_at").default(sql`NOW()`),
 });
 
@@ -45,6 +47,7 @@ export const schedules = pgTable("schedules", {
   serviceType: jsonb("service_type").notNull(),
   actor: jsonb("actor").notNull(),
   extension: jsonb("extension"),
+  publisherUrl: text("publisher_url"), // Source publisher URL for multi-source tracking
   updatedAt: timestamp("updated_at").default(sql`NOW()`),
 });
 
@@ -56,6 +59,10 @@ export const slots = pgTable("slots", {
   start: timestamp("start").notNull(),
   end: timestamp("end").notNull(),
   extension: jsonb("extension"),
+  // SMART Scheduling Links extensions
+  appointmentType: text("appointment_type"), // Parsed from extension
+  isVirtual: boolean("is_virtual"), // Virtual service indicator
+  publisherUrl: text("publisher_url"), // Source publisher URL for multi-source tracking
   updatedAt: timestamp("updated_at").default(sql`NOW()`),
 });
 
@@ -97,6 +104,10 @@ export const searchFiltersSchema = z.object({
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
   availableOnly: z.boolean().default(false),
+  // New filters for Connectathon 41
+  languages: z.array(z.string()).optional(),
+  insurance: z.array(z.string()).optional(),
+  appointmentType: z.string().optional(),
 });
 
 export type SearchFilters = z.infer<typeof searchFiltersSchema>;

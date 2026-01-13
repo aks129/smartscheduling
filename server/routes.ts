@@ -7,25 +7,71 @@ import * as cron from "node-cron";
 
 const FHIR_BASE_URL = "https://zocdoc-smartscheduling.netlify.app";
 
-// FHIR data sync functions
-async function syncFHIRData() {
+// Multi-publisher support - parse from environment variable
+const getBulkPublishSources = (): string[] => {
+  const sources = process.env.BULK_PUBLISH_SOURCES;
+  if (sources) {
+    return sources.split(',').map(s => s.trim()).filter(s => s.length > 0);
+  }
+  // Default to single source if not configured
+  return [FHIR_BASE_URL];
+};
+
+// SMART Scheduling Links extension URLs
+const EXTENSION_URLS = {
+  BOOKING_DEEP_LINK: 'http://fhir-registry.smarthealthit.org/StructureDefinition/booking-deep-link',
+  BOOKING_PHONE: 'http://fhir-registry.smarthealthit.org/StructureDefinition/booking-phone',
+  APPOINTMENT_TYPE: 'http://fhir-registry.smarthealthit.org/StructureDefinition/appointment-type',
+  VIRTUAL_SERVICE: 'http://fhir-registry.smarthealthit.org/StructureDefinition/virtual-service-base',
+};
+
+// Helper function to extract appointment type from extensions
+function extractAppointmentType(extensions: any[]): string | null {
+  if (!Array.isArray(extensions)) return null;
+
+  const appointmentTypeExt = extensions.find(ext =>
+    ext.url === EXTENSION_URLS.APPOINTMENT_TYPE
+  );
+
+  if (appointmentTypeExt) {
+    return appointmentTypeExt.valueString ||
+           appointmentTypeExt.valueCodeableConcept?.text ||
+           appointmentTypeExt.valueCodeableConcept?.coding?.[0]?.display ||
+           null;
+  }
+
+  return null;
+}
+
+// Helper function to check if virtual service is supported
+function hasVirtualService(extensions: any[]): boolean {
+  if (!Array.isArray(extensions)) return false;
+
+  return extensions.some(ext =>
+    ext.url === EXTENSION_URLS.VIRTUAL_SERVICE ||
+    ext.url?.includes('virtual-service')
+  );
+}
+
+// FHIR data sync from a single source
+async function syncFHIRDataFromSource(sourceUrl: string) {
+  console.log(`Syncing from ${sourceUrl}...`);
+
   try {
-    console.log("Starting FHIR data sync...");
-    
     // Fetch manifest
-    const manifestResponse = await axios.get(`${FHIR_BASE_URL}/$bulk-publish`);
+    const manifestResponse = await axios.get(`${sourceUrl}/$bulk-publish`);
     const manifest = manifestResponse.data;
-    
+
     // Process each output file
     for (const output of manifest.output) {
       try {
         const response = await axios.get(output.url);
         const ndjsonData = response.data;
-        
+
         // Parse NDJSON (newline-delimited JSON)
         const lines = ndjsonData.split('\n').filter((line: string) => line.trim());
         const resources = lines.map((line: string) => JSON.parse(line));
-        
+
         switch (output.type) {
           case 'Location':
             const locations = resources.map((resource: any) => ({
@@ -36,11 +82,12 @@ async function syncFHIRData() {
               identifier: resource.identifier,
               description: resource.description,
               position: resource.position,
+              publisherUrl: sourceUrl,
             }));
             await storage.bulkUpsertLocations(locations);
-            console.log(`Synced ${locations.length} locations`);
+            console.log(`  ✓ Synced ${locations.length} locations from ${sourceUrl}`);
             break;
-            
+
           case 'PractitionerRole':
             const practitioners = resources.map((resource: any) => ({
               id: resource.id,
@@ -52,11 +99,12 @@ async function syncFHIRData() {
               specialty: resource.specialty,
               location: resource.location,
               telecom: resource.telecom,
+              publisherUrl: sourceUrl,
             }));
             await storage.bulkUpsertPractitionerRoles(practitioners);
-            console.log(`Synced ${practitioners.length} practitioner roles`);
+            console.log(`  ✓ Synced ${practitioners.length} practitioner roles from ${sourceUrl}`);
             break;
-            
+
           case 'Schedule':
             const schedules = resources.map((resource: any) => ({
               id: resource.id,
@@ -65,11 +113,12 @@ async function syncFHIRData() {
               serviceType: resource.serviceType,
               actor: resource.actor,
               extension: resource.extension,
+              publisherUrl: sourceUrl,
             }));
             await storage.bulkUpsertSchedules(schedules);
-            console.log(`Synced ${schedules.length} schedules`);
+            console.log(`  ✓ Synced ${schedules.length} schedules from ${sourceUrl}`);
             break;
-            
+
           case 'Slot':
             const slots = resources.map((resource: any) => ({
               id: resource.id,
@@ -78,18 +127,50 @@ async function syncFHIRData() {
               start: new Date(resource.start),
               end: new Date(resource.end),
               extension: resource.extension,
+              appointmentType: extractAppointmentType(resource.extension),
+              isVirtual: hasVirtualService(resource.extension),
+              publisherUrl: sourceUrl,
             }));
             await storage.bulkUpsertSlots(slots);
-            console.log(`Synced ${slots.length} slots`);
+            console.log(`  ✓ Synced ${slots.length} slots from ${sourceUrl}`);
             break;
         }
       } catch (error) {
-        console.error(`Error syncing ${output.type}:`, error);
+        console.error(`  ✗ Error syncing ${output.type} from ${sourceUrl}:`, error);
       }
     }
-    
-    console.log("FHIR data sync completed");
-    
+  } catch (error) {
+    console.error(`✗ Failed to sync from ${sourceUrl}:`, error);
+    throw error;
+  }
+}
+
+// FHIR data sync from all configured sources
+async function syncFHIRData() {
+  try {
+    console.log("Starting FHIR data sync from multiple sources...");
+
+    const sources = getBulkPublishSources();
+    console.log(`Configured sources: ${sources.length}`);
+    sources.forEach((source, index) => console.log(`  ${index + 1}. ${source}`));
+
+    let successCount = 0;
+    let failCount = 0;
+
+    // Sync from each source
+    for (const sourceUrl of sources) {
+      try {
+        await syncFHIRDataFromSource(sourceUrl);
+        successCount++;
+      } catch (error) {
+        failCount++;
+        // Continue with other sources even if one fails
+        console.error(`Continuing with remaining sources...`);
+      }
+    }
+
+    console.log(`\nFHIR data sync completed: ${successCount} succeeded, ${failCount} failed`);
+
     // Enrich with Optum provider data
     await enrichWithOptumData();
   } catch (error) {
@@ -470,6 +551,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: 'FHIR data sync completed successfully' });
     } catch (error) {
       res.status(500).json({ message: 'Failed to sync FHIR data' });
+    }
+  });
+
+  // ============================================
+  // FHIR Slot Directory Endpoints (Connectathon 41)
+  // ============================================
+
+  // FHIR $bulk-publish endpoint - Slot Directory role
+  app.get('/fhir/\\$bulk-publish', async (req, res) => {
+    try {
+      const protocol = req.protocol;
+      const host = req.get('host');
+      const baseUrl = `${protocol}://${host}`;
+
+      const [locations, practitioners, schedules, slots] = await Promise.all([
+        storage.getAllLocations(),
+        storage.getAllPractitionerRoles(),
+        storage.getAllSchedules(),
+        storage.getAllSlots(),
+      ]);
+
+      const manifest = {
+        transactionTime: new Date().toISOString(),
+        request: `${req.method} ${req.originalUrl}`,
+        requiresAccessToken: false,
+        output: [
+          {
+            type: "Location",
+            url: `${baseUrl}/fhir/data/locations.ndjson`,
+            count: locations.length,
+          },
+          {
+            type: "PractitionerRole",
+            url: `${baseUrl}/fhir/data/practitioners.ndjson`,
+            count: practitioners.length,
+          },
+          {
+            type: "Schedule",
+            url: `${baseUrl}/fhir/data/schedules.ndjson`,
+            count: schedules.length,
+          },
+          {
+            type: "Slot",
+            url: `${baseUrl}/fhir/data/slots.ndjson`,
+            count: slots.length,
+          },
+        ],
+        error: [],
+      };
+
+      res.json(manifest);
+    } catch (error) {
+      console.error('Error generating bulk publish manifest:', error);
+      res.status(500).json({ message: 'Failed to generate bulk publish manifest' });
+    }
+  });
+
+  // NDJSON data endpoints for bulk export
+  app.get('/fhir/data/locations.ndjson', async (req, res) => {
+    try {
+      const locations = await storage.getAllLocations();
+      res.setHeader('Content-Type', 'application/fhir+ndjson');
+      const ndjson = locations.map(location => JSON.stringify(location)).join('\n');
+      res.send(ndjson);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to export locations' });
+    }
+  });
+
+  app.get('/fhir/data/practitioners.ndjson', async (req, res) => {
+    try {
+      const practitioners = await storage.getAllPractitionerRoles();
+      res.setHeader('Content-Type', 'application/fhir+ndjson');
+      const ndjson = practitioners.map(p => JSON.stringify(p)).join('\n');
+      res.send(ndjson);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to export practitioners' });
+    }
+  });
+
+  app.get('/fhir/data/schedules.ndjson', async (req, res) => {
+    try {
+      const schedules = await storage.getAllSchedules();
+      res.setHeader('Content-Type', 'application/fhir+ndjson');
+      const ndjson = schedules.map(schedule => JSON.stringify(schedule)).join('\n');
+      res.send(ndjson);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to export schedules' });
+    }
+  });
+
+  app.get('/fhir/data/slots.ndjson', async (req, res) => {
+    try {
+      const slots = await storage.getAllSlots();
+      res.setHeader('Content-Type', 'application/fhir+ndjson');
+      const ndjson = slots.map(slot => JSON.stringify(slot)).join('\n');
+      res.send(ndjson);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to export slots' });
     }
   });
 

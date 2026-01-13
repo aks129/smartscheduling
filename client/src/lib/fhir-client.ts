@@ -66,6 +66,9 @@ export class FHIRClient {
     dateFrom?: string;
     dateTo?: string;
     availableOnly?: boolean;
+    languages?: string[];
+    insurance?: string[];
+    appointmentType?: string;
   }): Promise<{
     practitioners: PractitionerRole[];
     locations: Location[];
