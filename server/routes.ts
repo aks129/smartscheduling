@@ -4,6 +4,8 @@ import { storage } from "./storage";
 import { searchFiltersSchema } from "@shared/schema";
 import axios from "axios";
 import * as cron from "node-cron";
+import swaggerUi from "swagger-ui-express";
+import { swaggerSpec } from "./swagger";
 
 const FHIR_BASE_URL = "https://zocdoc-smartscheduling.netlify.app";
 
@@ -455,7 +457,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Health check endpoint
+  // Swagger UI for API documentation
+  /**
+   * @swagger
+   * /api-docs:
+   *   get:
+   *     summary: Swagger UI documentation
+   *     description: Interactive API documentation and testing interface
+   *     tags: [Documentation]
+   */
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: 'SMART Scheduling API Docs'
+  }));
+
+  // Swagger JSON spec
+  app.get('/api-docs.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(swaggerSpec);
+  });
+
+  /**
+   * @swagger
+   * /api/health:
+   *   get:
+   *     summary: Health check
+   *     description: Check if the API server is running
+   *     tags: [Health]
+   *     responses:
+   *       200:
+   *         description: Server is healthy
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 status:
+   *                   type: string
+   *                   example: ok
+   *                 timestamp:
+   *                   type: string
+   *                   format: date-time
+   */
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });

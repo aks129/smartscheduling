@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, Calendar, User, BookOpen, FileText, ExternalLink } from "lucide-react";
+import { Bell, Calendar, User, BookOpen, FileText, ExternalLink, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import SearchFilters from "@/components/search-filters";
 import ProviderCard from "@/components/provider-card";
@@ -88,6 +88,11 @@ export default function Home() {
               </div>
             </div>
             <div className="flex items-center space-x-4">
+              <a href="/admin">
+                <Button variant="ghost" size="icon" title="Admin Dashboard">
+                  <Settings className="h-5 w-5" />
+                </Button>
+              </a>
               <Button variant="ghost" size="icon" data-testid="button-notifications">
                 <Bell className="h-5 w-5" />
               </Button>
