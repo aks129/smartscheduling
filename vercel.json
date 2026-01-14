@@ -11,6 +11,10 @@
       "destination": "/api"
     },
     {
+      "source": "/publishers/(.*)",
+      "destination": "/api"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api"
     },
