@@ -213,14 +213,20 @@ The database schema is defined in [shared/schema.ts](shared/schema.ts) using Dri
 - **Multi-Publisher Support**: Syncs from multiple `$bulk-publish` endpoints
 - Configure sources via `BULK_PUBLISH_SOURCES` environment variable (comma-separated)
 - Default: Zocdoc SMART scheduling demo endpoint
-- **Example with 4 sources**:
+- **Touchstone Proxy for Connectathon**: Use AEGIS Touchstone proxy to track message exchanges
+  ```bash
+  # For Connectathon 41 - enables message tracking and quantification
+  BULK_PUBLISH_SOURCES=https://touchstone.aegis.net:53955/api/datasets/smart-aligned/$bulk-publish,https://zocdoc-smartscheduling-api.netlify.app
   ```
-  BULK_PUBLISH_SOURCES=https://zocdoc-smartscheduling-api.netlify.app,https://smart-scheduling-defacto.s3.us-east-2.amazonaws.com/public,https://www.rendeva.org/api/datasets/smart-aligned,https://raw.githubusercontent.com/culby/smart-scheduling-links/master/examples
+- **Example with multiple sources**:
+  ```bash
+  BULK_PUBLISH_SOURCES=https://touchstone.aegis.net:53955/api/datasets/smart-aligned/$bulk-publish,https://smart-scheduling-defacto.s3.us-east-2.amazonaws.com/public,https://www.rendeva.org/api/datasets/smart-aligned
   ```
 - FHIR sync runs automatically on server startup
 - Manual sync can be triggered via `POST /api/sync`
 - Optum enrichment attempts to match practitioners by NPI and adds insurance/qualification data
 - **NEW**: Tracks data provenance with `publisherUrl` field on all resources
+- **NEW**: Touchstone proxy integration for Connectathon message tracking
 
 ### Environment Variables
 

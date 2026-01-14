@@ -54,12 +54,18 @@ DATABASE_URL=postgresql://user:password@host:5432/dbname
 USE_DB_STORAGE=false  # Set to 'true' to enable PostgreSQL
 
 # Multi-Publisher Configuration (Connectathon 41)
-BULK_PUBLISH_SOURCES=https://zocdoc-smartscheduling-api.netlify.app,https://smart-scheduling-defacto.s3.us-east-2.amazonaws.com/public,https://www.rendeva.org/api/datasets/smart-aligned
+# IMPORTANT: Use Touchstone proxy for Connectathon to track message exchanges
+BULK_PUBLISH_SOURCES=https://touchstone.aegis.net:53955/api/datasets/smart-aligned/$bulk-publish,https://zocdoc-smartscheduling-api.netlify.app
+
+# Alternative sources (for development/testing)
+# BULK_PUBLISH_SOURCES=https://smart-scheduling-defacto.s3.us-east-2.amazonaws.com/public,https://www.rendeva.org/api/datasets/smart-aligned
 
 # Server
 PORT=5000
 NODE_ENV=development
 ```
+
+**Note**: For HL7 FHIR Connectathon 41, use the Touchstone proxy URL to enable message tracking. See [docs/TOUCHSTONE_INTEGRATION.md](docs/TOUCHSTONE_INTEGRATION.md) for details.
 
 ## Project Structure
 

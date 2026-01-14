@@ -121,15 +121,32 @@ This scenario validates slot resource structure and referential integrity.
 
 ## Testing Against Rendeva's Dataset
 
-You can also test our **Client** role by consuming Rendeva's test dataset:
+You can also test our **Client** role by consuming Rendeva's test dataset.
+
+### Important: Use Touchstone Proxy for Connectathon
+
+For **HL7 FHIR Connectathon 41**, use the AEGIS Touchstone proxy to track all message exchanges:
+
+```bash
+# In .env file - Touchstone proxy URL
+BULK_PUBLISH_SOURCES=https://touchstone.aegis.net:53955/api/datasets/smart-aligned/$bulk-publish
+```
+
+**Why use Touchstone?**
+- ✅ Tracks all message exchanges for Connectathon quantification
+- ✅ Validates FHIR compliance in real-time
+- ✅ Provides test reports and certification
+- ✅ Records interactions for audit trail
+
+See [TOUCHSTONE_INTEGRATION.md](TOUCHSTONE_INTEGRATION.md) for complete setup guide.
 
 ### Configure Multi-Publisher Sync
 
-Add Rendeva's smart-aligned dataset to your environment:
+Add multiple sources including Touchstone:
 
 ```bash
 # In .env file
-BULK_PUBLISH_SOURCES=https://zocdoc-smartscheduling-api.netlify.app,https://www.rendeva.org/api/datasets/smart-aligned
+BULK_PUBLISH_SOURCES=https://touchstone.aegis.net:53955/api/datasets/smart-aligned/$bulk-publish,https://zocdoc-smartscheduling-api.netlify.app
 ```
 
 ### Sync Rendeva Data
