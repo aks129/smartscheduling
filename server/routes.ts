@@ -605,7 +605,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // FHIR $bulk-publish endpoint - Slot Directory role
   app.get('/fhir/\\$bulk-publish', async (req, res) => {
     try {
-      const protocol = req.protocol;
+      // Force HTTPS for Vercel deployments
+      const protocol = req.get('x-forwarded-proto') || req.protocol;
       const host = req.get('host');
       const baseUrl = `${protocol}://${host}`;
 
@@ -670,45 +671,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper function to clean FHIR resource (remove non-FHIR fields)
+  function cleanFHIRResource(resource: any, resourceType: string): any {
+    const { updatedAt, publisherUrl, appointmentType, isVirtual, ...fhirResource } = resource;
+    return {
+      resourceType,
+      ...fhirResource
+    };
+  }
+
   // NDJSON data endpoints for bulk export
-  app.get('/fhir/data/locations.ndjson', async (req, res) => {
+  app.get('/fhir/data/locations.ndjson', async (_req, res) => {
     try {
       const locations = await storage.getAllLocations();
       res.setHeader('Content-Type', 'application/fhir+ndjson');
-      const ndjson = locations.map(location => JSON.stringify(location)).join('\n');
+      const ndjson = locations.map(location =>
+        JSON.stringify(cleanFHIRResource(location, 'Location'))
+      ).join('\n');
       res.send(ndjson);
     } catch (error) {
       res.status(500).json({ message: 'Failed to export locations' });
     }
   });
 
-  app.get('/fhir/data/practitioners.ndjson', async (req, res) => {
+  app.get('/fhir/data/practitioners.ndjson', async (_req, res) => {
     try {
       const practitioners = await storage.getAllPractitionerRoles();
       res.setHeader('Content-Type', 'application/fhir+ndjson');
-      const ndjson = practitioners.map(p => JSON.stringify(p)).join('\n');
+      const ndjson = practitioners.map(p =>
+        JSON.stringify(cleanFHIRResource(p, 'PractitionerRole'))
+      ).join('\n');
       res.send(ndjson);
     } catch (error) {
       res.status(500).json({ message: 'Failed to export practitioners' });
     }
   });
 
-  app.get('/fhir/data/schedules.ndjson', async (req, res) => {
+  app.get('/fhir/data/schedules.ndjson', async (_req, res) => {
     try {
       const schedules = await storage.getAllSchedules();
       res.setHeader('Content-Type', 'application/fhir+ndjson');
-      const ndjson = schedules.map(schedule => JSON.stringify(schedule)).join('\n');
+      const ndjson = schedules.map(schedule =>
+        JSON.stringify(cleanFHIRResource(schedule, 'Schedule'))
+      ).join('\n');
       res.send(ndjson);
     } catch (error) {
       res.status(500).json({ message: 'Failed to export schedules' });
     }
   });
 
-  app.get('/fhir/data/slots.ndjson', async (req, res) => {
+  app.get('/fhir/data/slots.ndjson', async (_req, res) => {
     try {
       const slots = await storage.getAllSlots();
       res.setHeader('Content-Type', 'application/fhir+ndjson');
-      const ndjson = slots.map(slot => JSON.stringify(slot)).join('\n');
+      const ndjson = slots.map(slot =>
+        JSON.stringify(cleanFHIRResource(slot, 'Slot'))
+      ).join('\n');
       res.send(ndjson);
     } catch (error) {
       res.status(500).json({ message: 'Failed to export slots' });
