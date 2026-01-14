@@ -770,6 +770,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ============================================
+  // Publishers Metadata Endpoint
+  // ============================================
+
+  // GET /publishers/metadata - Publisher metadata with state hints
+  app.get('/publishers/metadata', async (_req, res) => {
+    try {
+      const locations = await storage.getAllLocations();
+
+      // Extract unique states from locations
+      const states = new Set<string>();
+      locations.forEach(location => {
+        if (location.address && typeof location.address === 'object' && 'state' in location.address) {
+          const state = location.address.state;
+          if (typeof state === 'string' && state.length > 0) {
+            states.add(state);
+          }
+        }
+      });
+
+      // Get publisher URL from environment or use default
+      const publisherSources = process.env.BULK_PUBLISH_SOURCES?.split(',') || [];
+      const defaultSource = 'https://zocdoc-smartscheduling.netlify.app';
+      const publisherUrl = publisherSources[0] || defaultSource;
+
+      const metadata = {
+        name: "SMART Healthcare Scheduling Platform",
+        description: "FHIR-compliant scheduling platform for HL7 Connectathon 41",
+        publisher: "SMART Scheduling Links Implementation",
+        contact: {
+          url: "https://smartscheduling.vercel.app"
+        },
+        bulkPublishEndpoint: `${_req.protocol}://${_req.get('host')}/fhir/$bulk-publish`,
+        fhirVersion: "R4",
+        implementationGuide: "http://hl7.org/fhir/uv/smart-scheduling-links/ImplementationGuide/hl7.fhir.uv.smart-scheduling-links",
+        states: Array.from(states).sort(),
+        resourceCounts: {
+          locations: locations.length,
+          slots: (await storage.getAllSlots()).length
+        },
+        lastUpdated: new Date().toISOString()
+      };
+
+      res.json(metadata);
+    } catch (error) {
+      console.error('Error generating publisher metadata:', error);
+      res.status(500).json({ message: 'Failed to generate publisher metadata' });
+    }
+  });
+
+  // ============================================
   // Smart Scheduler Agent (A2A, REST, MCP)
   // ============================================
   app.use('/api/smart-scheduler', smartSchedulerRouter);
