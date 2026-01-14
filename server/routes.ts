@@ -794,14 +794,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const defaultSource = 'https://zocdoc-smartscheduling.netlify.app';
       const publisherUrl = publisherSources[0] || defaultSource;
 
+      // Force HTTPS for Vercel deployments
+      const protocol = _req.get('x-forwarded-proto') || _req.protocol;
+      const host = _req.get('host');
+
       const metadata = {
         name: "SMART Healthcare Scheduling Platform",
         description: "FHIR-compliant scheduling platform for HL7 Connectathon 41",
         publisher: "SMART Scheduling Links Implementation",
         contact: {
-          url: "https://smartscheduling.vercel.app"
+          url: `${protocol}://${host}`
         },
-        bulkPublishEndpoint: `${_req.protocol}://${_req.get('host')}/fhir/$bulk-publish`,
+        bulkPublishEndpoint: `${protocol}://${host}/fhir/$bulk-publish`,
         fhirVersion: "R4",
         implementationGuide: "http://hl7.org/fhir/uv/smart-scheduling-links/ImplementationGuide/hl7.fhir.uv.smart-scheduling-links",
         states: Array.from(states).sort(),
