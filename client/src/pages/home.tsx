@@ -7,6 +7,7 @@ import LocationMap from "@/components/location-map";
 import AvailabilityCalendar from "@/components/availability-calendar";
 import BookingModal from "@/components/booking-modal";
 import LoadingIndicator from "@/components/loading-indicator";
+import { AgentChat } from "@/components/agent-chat";
 import { useFHIRData } from "@/hooks/use-fhir-data";
 import type { PractitionerRole, Location, Slot, SearchFilters as SearchFiltersType } from "@shared/schema";
 
@@ -213,11 +214,28 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Right Column: Map and Calendar */}
+          {/* Right Column: Agent Chat, Map and Calendar */}
           <div className="space-y-6">
+            {/* Smart Scheduling Agent Chat */}
+            <AgentChat
+              onProviderSelect={(providerId) => {
+                const provider = displayProviders.find(p => p.id === providerId);
+                if (provider) {
+                  setSelectedProvider(provider);
+                }
+              }}
+              onSlotSelect={(slotId) => {
+                const slot = availableSlots.find(s => s.id === slotId);
+                if (slot) {
+                  setSelectedSlot(slot);
+                  setIsBookingModalOpen(true);
+                }
+              }}
+            />
+
             {/* Google Maps Integration */}
-            <LocationMap 
-              locations={displayLocations} 
+            <LocationMap
+              locations={displayLocations}
               selectedProvider={selectedProvider}
             />
 
@@ -336,6 +354,17 @@ export default function Home() {
                     className="text-primary hover:underline inline-flex items-center"
                   >
                     Bulk Publish Manifest
+                    <ExternalLink className="w-3 h-3 ml-1" />
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="/api/smart-scheduler/.well-known/agent-card.json"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline inline-flex items-center"
+                  >
+                    Agent Card (A2A)
                     <ExternalLink className="w-3 h-3 ml-1" />
                   </a>
                 </li>
