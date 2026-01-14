@@ -395,6 +395,30 @@ New fields added for Connectathon compliance in [shared/schema.ts](shared/schema
    - **Client**: `https://yourdomain.com` (UI)
    - **Slot Directory**: `https://yourdomain.com/fhir/$bulk-publish`
 
+### Rendeva Conformance Testing
+
+The application has been tested against the [Rendeva conformance checker](https://www.rendeva.org/conformance) for SMART Scheduling Links IG compliance.
+
+**Testing Endpoints:**
+- Production: `https://smartscheduling.vercel.app/fhir/$bulk-publish`
+- Local: `http://localhost:5000/fhir/$bulk-publish`
+
+**Key Conformance Features:**
+- ✅ Proper FHIR resourceType in all NDJSON resources
+- ✅ Clean FHIR resources (no non-standard fields in exports)
+- ✅ HTTPS URLs in manifest (via x-forwarded-proto detection)
+- ✅ State extension in Slot output entries
+- ✅ ETag support for conditional requests
+- ✅ Referential integrity between Slot and Schedule resources
+
+**Before Testing:**
+1. Trigger FHIR sync: `curl -X POST https://smartscheduling.vercel.app/api/sync`
+2. Verify manifest: `curl https://smartscheduling.vercel.app/fhir/$bulk-publish`
+3. Run [Rendeva Scenario 1](https://www.rendeva.org/conformance) for bulk-publish validation
+4. Run [Rendeva Scenario 3](https://www.rendeva.org/conformance) for slot discovery validation
+
+See [docs/RENDEVA_TESTING.md](docs/RENDEVA_TESTING.md) for detailed testing instructions and troubleshooting.
+
 ## Agent-to-Agent (A2A) Integration
 
 This application integrates with the [AgentInterOp](https://github.com/aks129/AgentInterOp) framework to enable agent-to-agent communication for healthcare scheduling. The Smart Scheduler Agent allows AI agents to search for providers, check availability, and obtain booking links.
