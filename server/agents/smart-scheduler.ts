@@ -1,5 +1,5 @@
 import { storage } from "../storage";
-import type { SearchFilters, PractitionerRole, Location, Slot } from "@shared/schema";
+import type { SearchFilters, PractitionerRole, Location, Slot, Schedule } from "@shared/schema";
 
 // Agent state types
 export type AgentState = 'IDLE' | 'SEARCHING' | 'RESULTS_READY' | 'SLOT_SELECTED' | 'BOOKING_INFO_READY';
@@ -82,6 +82,37 @@ export class SmartSchedulerAgent {
       let practitioners = await storage.getAllPractitionerRoles();
       let locations = await storage.getAllLocations();
       let slots = await storage.getAllSlots();
+      const allSchedules = await storage.getAllSchedules();
+
+      // Build schedule-to-practitioner mapping
+      // Schedule.actor contains references like [{ reference: "PractitionerRole/xxx" }, { reference: "Location/xxx" }]
+      const scheduleToPractitioners = new Map<string, Set<string>>();
+      const practitionerToSchedules = new Map<string, Set<string>>();
+
+      for (const schedule of allSchedules) {
+        const scheduleId = schedule.id;
+        const practitionerIds = new Set<string>();
+
+        if (Array.isArray(schedule.actor)) {
+          for (const actorRef of schedule.actor as any[]) {
+            if (actorRef?.reference && typeof actorRef.reference === 'string') {
+              const ref = actorRef.reference;
+              if (ref.startsWith('PractitionerRole/')) {
+                const practitionerId = ref.replace('PractitionerRole/', '');
+                practitionerIds.add(practitionerId);
+
+                // Build reverse mapping
+                if (!practitionerToSchedules.has(practitionerId)) {
+                  practitionerToSchedules.set(practitionerId, new Set());
+                }
+                practitionerToSchedules.get(practitionerId)!.add(scheduleId);
+              }
+            }
+          }
+        }
+
+        scheduleToPractitioners.set(scheduleId, practitionerIds);
+      }
 
       // Track if any filters were applied
       let filtersApplied = false;
@@ -198,6 +229,36 @@ export class SmartSchedulerAgent {
         );
       }
 
+      // CRITICAL: Filter slots to only include those belonging to filtered practitioners
+      // Slot → Schedule (via slot.schedule.reference) → PractitionerRole (via schedule.actor)
+      const filteredPractitionerIds = new Set(practitioners.map(p => p.id));
+
+      // Get schedule IDs that belong to filtered practitioners
+      const relevantScheduleIds = new Set<string>();
+      practitionerToSchedules.forEach((scheduleIds, practitionerId) => {
+        if (filteredPractitionerIds.has(practitionerId)) {
+          scheduleIds.forEach(scheduleId => {
+            relevantScheduleIds.add(scheduleId);
+          });
+        }
+      });
+
+      // Filter slots to only those belonging to relevant schedules
+      if (filtersApplied && relevantScheduleIds.size > 0) {
+        slots = slots.filter(slot => {
+          if (slot.schedule && typeof slot.schedule === 'object' && 'reference' in slot.schedule) {
+            const scheduleRef = (slot.schedule as any).reference as string;
+            const scheduleId = scheduleRef.replace('Schedule/', '');
+            return relevantScheduleIds.has(scheduleId);
+          }
+          return false;
+        });
+      } else if (filtersApplied && filteredPractitionerIds.size > 0 && relevantScheduleIds.size === 0) {
+        // If we have practitioners but no schedules found, return empty slots
+        // (This means the practitioners don't have any schedules/availability)
+        slots = [];
+      }
+
       // Build filters for context storage
       const filters: SearchFilters = {
         specialty: request.specialty,
@@ -206,7 +267,7 @@ export class SmartSchedulerAgent {
         languages: request.languages,
         dateFrom: request.dateFrom,
         dateTo: request.dateTo,
-        availableOnly: request.availableOnly,
+        availableOnly: request.availableOnly ?? false,
         appointmentType: request.appointmentType,
       };
 
@@ -261,12 +322,29 @@ export class SmartSchedulerAgent {
         : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Default 30 days
 
       const allSlots = await storage.getSlotsByDateRange(startDate, endDate);
+      const allSchedules = await storage.getAllSchedules();
 
-      // Filter slots by provider's schedule
+      // Build a set of schedule IDs that belong to this provider
+      // Schedule.actor contains references like [{ reference: "PractitionerRole/xxx" }]
+      const providerScheduleIds = new Set<string>();
+      for (const schedule of allSchedules) {
+        if (Array.isArray(schedule.actor)) {
+          for (const actorRef of schedule.actor as any[]) {
+            if (actorRef?.reference === `PractitionerRole/${request.providerId}`) {
+              providerScheduleIds.add(schedule.id);
+              break;
+            }
+          }
+        }
+      }
+
+      // Filter slots by provider's schedules
+      // Slot.schedule.reference = "Schedule/xxx"
       const providerSlots = allSlots.filter(slot => {
         if (slot.schedule && typeof slot.schedule === 'object' && 'reference' in slot.schedule) {
-          const reference = slot.schedule.reference as string;
-          return reference.includes(request.providerId);
+          const scheduleRef = (slot.schedule as any).reference as string;
+          const scheduleId = scheduleRef.replace('Schedule/', '');
+          return providerScheduleIds.has(scheduleId);
         }
         return false;
       });
