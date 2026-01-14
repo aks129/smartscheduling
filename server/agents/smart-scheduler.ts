@@ -78,6 +78,127 @@ export class SmartSchedulerAgent {
     };
   }> {
     try {
+      // Get all data first
+      let practitioners = await storage.getAllPractitionerRoles();
+      let locations = await storage.getAllLocations();
+      let slots = await storage.getAllSlots();
+
+      // Track if any filters were applied
+      let filtersApplied = false;
+
+      // Filter by specialty (flexible matching)
+      if (request.specialty) {
+        filtersApplied = true;
+        const specLower = request.specialty.toLowerCase();
+        practitioners = practitioners.filter(p => {
+          // Check specialty array
+          if (Array.isArray(p.specialty)) {
+            return p.specialty.some((spec: any) => {
+              if (Array.isArray(spec.coding)) {
+                return spec.coding.some((coding: any) =>
+                  coding.display?.toLowerCase().includes(specLower) ||
+                  coding.code?.toLowerCase().includes(specLower)
+                );
+              }
+              return spec.text?.toLowerCase().includes(specLower);
+            });
+          }
+          // Also check practitioner display name for specialty hints
+          if (p.practitioner && typeof p.practitioner === 'object' && 'display' in p.practitioner) {
+            return (p.practitioner.display as string)?.toLowerCase().includes(specLower);
+          }
+          return false;
+        });
+      }
+
+      // Filter by location (match city, state, zip, or name)
+      if (request.location) {
+        filtersApplied = true;
+        const locLower = request.location.toLowerCase();
+        const matchingLocationIds = new Set<string>();
+
+        // Find matching locations
+        locations = locations.filter(l => {
+          const address = l.address as any;
+          const matches = l.name?.toLowerCase().includes(locLower) ||
+            (address?.city?.toLowerCase().includes(locLower)) ||
+            (address?.state?.toLowerCase().includes(locLower)) ||
+            (address?.postalCode?.includes(request.location!)) ||
+            (address?.line && Array.isArray(address.line) &&
+              address.line.some((line: string) => line.toLowerCase().includes(locLower)));
+
+          if (matches) {
+            matchingLocationIds.add(l.id);
+          }
+          return matches;
+        });
+
+        // Filter practitioners by matching locations (only if we found matching locations)
+        if (matchingLocationIds.size > 0) {
+          practitioners = practitioners.filter(p => {
+            if (Array.isArray(p.location)) {
+              return p.location.some((locRef: any) => {
+                const refId = locRef.reference?.replace('Location/', '');
+                return matchingLocationIds.has(refId);
+              });
+            }
+            return true; // Keep if no location reference (don't filter out)
+          });
+        }
+      }
+
+      // Filter by insurance
+      if (request.insurance && request.insurance.length > 0) {
+        filtersApplied = true;
+        practitioners = practitioners.filter(p => {
+          if (!p.insuranceAccepted || !Array.isArray(p.insuranceAccepted)) {
+            return false;
+          }
+          return request.insurance!.some(ins =>
+            (p.insuranceAccepted as any[]).some((accepted: any) =>
+              accepted.type?.toLowerCase().includes(ins.toLowerCase()) ||
+              accepted.name?.toLowerCase().includes(ins.toLowerCase())
+            )
+          );
+        });
+      }
+
+      // Filter by languages
+      if (request.languages && request.languages.length > 0) {
+        filtersApplied = true;
+        practitioners = practitioners.filter(p => {
+          if (!p.languagesSpoken || !Array.isArray(p.languagesSpoken)) {
+            return false;
+          }
+          return request.languages!.some(lang =>
+            (p.languagesSpoken as any[]).some((spoken: any) =>
+              spoken.language?.toLowerCase().includes(lang.toLowerCase()) ||
+              spoken.code?.toLowerCase().includes(lang.toLowerCase())
+            )
+          );
+        });
+      }
+
+      // Filter slots by availability status (default to showing all slots unless specified)
+      if (request.availableOnly === true) {
+        slots = slots.filter(slot => slot.status === 'free');
+      }
+
+      // Filter slots by date range
+      if (request.dateFrom || request.dateTo) {
+        const startDate = request.dateFrom ? new Date(request.dateFrom) : new Date();
+        const endDate = request.dateTo ? new Date(request.dateTo) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        slots = slots.filter(slot => slot.start >= startDate && slot.start <= endDate);
+      }
+
+      // Filter slots by appointment type
+      if (request.appointmentType) {
+        slots = slots.filter(slot =>
+          slot.appointmentType?.toLowerCase() === request.appointmentType!.toLowerCase()
+        );
+      }
+
+      // Build filters for context storage
       const filters: SearchFilters = {
         specialty: request.specialty,
         location: request.location,
@@ -85,11 +206,11 @@ export class SmartSchedulerAgent {
         languages: request.languages,
         dateFrom: request.dateFrom,
         dateTo: request.dateTo,
-        availableOnly: request.availableOnly ?? true,
+        availableOnly: request.availableOnly,
         appointmentType: request.appointmentType,
       };
 
-      const results = await storage.searchProviders(filters);
+      const results = { practitioners, locations, availableSlots: slots };
 
       // Update context if provided
       if (contextId) {
@@ -99,13 +220,19 @@ export class SmartSchedulerAgent {
         context.lastSearchResults = results;
       }
 
+      // Build descriptive message
+      let message = `Found ${practitioners.length} providers and ${slots.length} slots`;
+      if (!filtersApplied) {
+        message = `Showing all ${practitioners.length} providers and ${slots.length} slots. Try filtering by specialty (e.g., "dermatology") or location.`;
+      }
+
       return {
         success: true,
-        message: `Found ${results.practitioners.length} providers and ${results.availableSlots.length} available slots`,
+        message,
         data: {
           ...results,
-          totalProviders: results.practitioners.length,
-          totalSlots: results.availableSlots.length,
+          totalProviders: practitioners.length,
+          totalSlots: slots.length,
         },
       };
     } catch (error) {

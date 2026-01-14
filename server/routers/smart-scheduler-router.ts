@@ -451,50 +451,157 @@ async function handleMessageSend(agent: ReturnType<typeof getSmartSchedulerAgent
   const textParts = message.parts.filter((p: any) => p.type === "text");
   const text = textParts.map((p: any) => p.text).join(" ").toLowerCase();
 
-  // Simple intent detection based on keywords
-  if (text.includes("search") || text.includes("find") || text.includes("looking for")) {
-    // Extract search parameters from text
-    const searchParams: SearchRequest = {
-      availableOnly: true,
-    };
+  // Check for list/show all commands first
+  if (text.includes("list") || text.includes("show all") || text.includes("all providers") || text.includes("all doctors")) {
+    return await agent.searchProviders({}, contextId);
+  }
 
-    // Extract specialty if mentioned
-    const specialties = ["dermatologist", "cardiologist", "primary care", "pediatrician", "obgyn", "neurologist"];
-    for (const spec of specialties) {
-      if (text.includes(spec)) {
-        searchParams.specialty = spec.charAt(0).toUpperCase() + spec.slice(1);
+  if (text.includes("all locations") || text.includes("list locations")) {
+    return await agent.getAllLocations();
+  }
+
+  if (text.includes("all slots") || text.includes("list slots")) {
+    return await agent.getAllSlots({ availableOnly: true });
+  }
+
+  // Intent detection - any request mentioning providers, doctors, specialists triggers search
+  const isSearchIntent = text.includes("search") ||
+    text.includes("find") ||
+    text.includes("looking for") ||
+    text.includes("need") ||
+    text.includes("want") ||
+    text.includes("show") ||
+    text.includes("doctor") ||
+    text.includes("provider") ||
+    text.includes("specialist") ||
+    // Specialty mentions also trigger search
+    text.includes("dermatolog") ||
+    text.includes("cardiolog") ||
+    text.includes("pediatr") ||
+    text.includes("neurolog") ||
+    text.includes("primary care") ||
+    text.includes("obgyn") ||
+    text.includes("gynecolog") ||
+    text.includes("orthoped") ||
+    text.includes("psychiatr") ||
+    text.includes("psycholog");
+
+  if (isSearchIntent) {
+    // Extract search parameters from text
+    const searchParams: SearchRequest = {};
+
+    // Extract specialty if mentioned - expanded list with variations
+    const specialtyPatterns: { pattern: RegExp; specialty: string }[] = [
+      { pattern: /dermatolog/i, specialty: "Dermatology" },
+      { pattern: /cardiolog/i, specialty: "Cardiology" },
+      { pattern: /primary care|family (medicine|doctor|physician)|general pract/i, specialty: "Primary Care" },
+      { pattern: /pediatr/i, specialty: "Pediatrics" },
+      { pattern: /obgyn|gynecolog|obstetric/i, specialty: "OB/GYN" },
+      { pattern: /neurolog/i, specialty: "Neurology" },
+      { pattern: /orthoped/i, specialty: "Orthopedics" },
+      { pattern: /psychiatr/i, specialty: "Psychiatry" },
+      { pattern: /psycholog/i, specialty: "Psychology" },
+      { pattern: /ophthalm|eye doctor/i, specialty: "Ophthalmology" },
+      { pattern: /oncolog/i, specialty: "Oncology" },
+      { pattern: /urolog/i, specialty: "Urology" },
+      { pattern: /endocrin/i, specialty: "Endocrinology" },
+      { pattern: /gastro/i, specialty: "Gastroenterology" },
+      { pattern: /pulmon/i, specialty: "Pulmonology" },
+      { pattern: /rheumat/i, specialty: "Rheumatology" },
+      { pattern: /allerg|immunolog/i, specialty: "Allergy/Immunology" },
+      { pattern: /infectious/i, specialty: "Infectious Disease" },
+      { pattern: /nephrol/i, specialty: "Nephrology" },
+      { pattern: /hematol/i, specialty: "Hematology" },
+    ];
+
+    for (const { pattern, specialty } of specialtyPatterns) {
+      if (pattern.test(text)) {
+        searchParams.specialty = specialty;
         break;
       }
     }
 
-    // Extract location - look for city names or zip codes
+    // Extract location - look for city names, states, or zip codes
     const zipMatch = text.match(/\b\d{5}\b/);
     if (zipMatch) {
       searchParams.location = zipMatch[0];
     } else {
-      const cities = ["boston", "new york", "los angeles", "chicago", "houston", "phoenix"];
-      for (const city of cities) {
-        if (text.includes(city)) {
-          searchParams.location = city.charAt(0).toUpperCase() + city.slice(1);
-          break;
+      // Check for "in [location]" or "near [location]" patterns
+      const locationMatch = text.match(/(?:in|near|around|at)\s+([a-zA-Z\s]+?)(?:\s+area|\s+region|\s*$|,|\.|that|who)/i);
+      if (locationMatch) {
+        searchParams.location = locationMatch[1].trim();
+      } else {
+        // Check for common city/state names
+        const locationPatterns: { pattern: RegExp; location: string }[] = [
+          { pattern: /\bboston\b/i, location: "Boston" },
+          { pattern: /\bnew york\b|\bnyc\b/i, location: "New York" },
+          { pattern: /\blos angeles\b|\bla\b/i, location: "Los Angeles" },
+          { pattern: /\bchicago\b/i, location: "Chicago" },
+          { pattern: /\bhouston\b/i, location: "Houston" },
+          { pattern: /\bphoenix\b/i, location: "Phoenix" },
+          { pattern: /\bphiladelphia\b/i, location: "Philadelphia" },
+          { pattern: /\bsan antonio\b/i, location: "San Antonio" },
+          { pattern: /\bsan diego\b/i, location: "San Diego" },
+          { pattern: /\bdallas\b/i, location: "Dallas" },
+          { pattern: /\bsan jose\b/i, location: "San Jose" },
+          { pattern: /\baustin\b/i, location: "Austin" },
+          { pattern: /\bseattle\b/i, location: "Seattle" },
+          { pattern: /\bdenver\b/i, location: "Denver" },
+          { pattern: /\batlanta\b/i, location: "Atlanta" },
+          { pattern: /\bmiami\b/i, location: "Miami" },
+        ];
+
+        for (const { pattern, location } of locationPatterns) {
+          if (pattern.test(text)) {
+            searchParams.location = location;
+            break;
+          }
         }
       }
     }
 
-    // Extract insurance
-    if (text.includes("medicare")) {
-      searchParams.insurance = ["Medicare"];
-    } else if (text.includes("medicaid")) {
-      searchParams.insurance = ["Medicaid"];
+    // Extract insurance - expanded list
+    const insurancePatterns: { pattern: RegExp; insurance: string }[] = [
+      { pattern: /\bmedicare\b/i, insurance: "Medicare" },
+      { pattern: /\bmedicaid\b/i, insurance: "Medicaid" },
+      { pattern: /\bblue cross|bcbs\b/i, insurance: "Blue Cross Blue Shield" },
+      { pattern: /\baetna\b/i, insurance: "Aetna" },
+      { pattern: /\bunited\s*health/i, insurance: "UnitedHealthcare" },
+      { pattern: /\bcigna\b/i, insurance: "Cigna" },
+      { pattern: /\bhumana\b/i, insurance: "Humana" },
+      { pattern: /\bkaiser\b/i, insurance: "Kaiser" },
+    ];
+
+    for (const { pattern, insurance } of insurancePatterns) {
+      if (pattern.test(text)) {
+        searchParams.insurance = searchParams.insurance || [];
+        searchParams.insurance.push(insurance);
+      }
     }
 
-    // Extract language
-    if (text.includes("spanish")) {
-      searchParams.languages = ["Spanish"];
+    // Extract language preferences
+    const languagePatterns: { pattern: RegExp; language: string }[] = [
+      { pattern: /\bspanish\b/i, language: "Spanish" },
+      { pattern: /\bchinese\b|\bmandarin\b|\bcantonese\b/i, language: "Chinese" },
+      { pattern: /\bfrench\b/i, language: "French" },
+      { pattern: /\bvietnamese\b/i, language: "Vietnamese" },
+      { pattern: /\bkorean\b/i, language: "Korean" },
+      { pattern: /\bgerman\b/i, language: "German" },
+      { pattern: /\btagalog\b|\bfilipino\b/i, language: "Tagalog" },
+      { pattern: /\barabic\b/i, language: "Arabic" },
+      { pattern: /\brussian\b/i, language: "Russian" },
+      { pattern: /\bportuguese\b/i, language: "Portuguese" },
+    ];
+
+    for (const { pattern, language } of languagePatterns) {
+      if (pattern.test(text)) {
+        searchParams.languages = searchParams.languages || [];
+        searchParams.languages.push(language);
+      }
     }
 
     return await agent.searchProviders(searchParams, contextId);
-  } else if (text.includes("availability") || text.includes("available") || text.includes("slots")) {
+  } else if (text.includes("availability") || text.includes("available") || text.includes("slots") || text.includes("appointment time")) {
     // Look for a provider ID in message data
     const dataParts = message.parts.filter((p: any) => p.type === "data");
     const providerId = dataParts[0]?.data?.providerId;
@@ -503,11 +610,9 @@ async function handleMessageSend(agent: ReturnType<typeof getSmartSchedulerAgent
       return await agent.getAvailability({ providerId }, contextId);
     }
 
-    return {
-      success: false,
-      message: "Please specify a provider ID to check availability",
-    };
-  } else if (text.includes("book") || text.includes("schedule") || text.includes("appointment")) {
+    // If asking about availability without a provider, return available slots
+    return await agent.getAllSlots({ availableOnly: true });
+  } else if (text.includes("book") || text.includes("schedule") || text.includes("reserve")) {
     const dataParts = message.parts.filter((p: any) => p.type === "data");
     const slotId = dataParts[0]?.data?.slotId;
 
@@ -517,16 +622,18 @@ async function handleMessageSend(agent: ReturnType<typeof getSmartSchedulerAgent
 
     return {
       success: false,
-      message: "Please specify a slot ID to get booking information",
+      message: "To book an appointment, first search for providers, then select a slot. I'll provide booking information once you choose a specific time.",
+    };
+  } else if (text.includes("help") || text.includes("what can you") || text.includes("how do")) {
+    return {
+      success: true,
+      message: "I can help you with healthcare scheduling! Try:\n\n• \"Find dermatologists in Boston\"\n• \"Show me Spanish-speaking doctors\"\n• \"Search for cardiologists that accept Medicare\"\n• \"List all providers\"\n• \"Show available appointments\"",
+      data: agent.getCapabilities(),
     };
   }
 
-  // Default: return capabilities
-  return {
-    success: true,
-    message: "I can help you search for healthcare providers, check availability, and get booking information. What would you like to do?",
-    data: agent.getCapabilities(),
-  };
+  // Default: run a general search to show available providers
+  return await agent.searchProviders({}, contextId);
 }
 
 // ============================================
