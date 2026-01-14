@@ -49,7 +49,12 @@ Note: This project uses Neon Database (PostgreSQL). The `DATABASE_URL` environme
 │   ├── index.ts         # Server entry point
 │   ├── routes.ts        # API routes and FHIR sync logic
 │   ├── storage.ts       # Storage abstraction layer (IStorage interface, MemStorage implementation)
-│   └── vite.ts          # Vite integration for dev/prod
+│   ├── vite.ts          # Vite integration for dev/prod
+│   ├── agents/          # Agent-to-Agent (A2A) implementations
+│   │   ├── smart-scheduler.ts  # SmartSchedulerAgent class
+│   │   └── agent-card.json     # A2A discovery card
+│   └── routers/         # Express sub-routers
+│       └── smart-scheduler-router.ts  # A2A, REST, MCP endpoints
 ├── shared/              # Shared code between client and server
 │   └── schema.ts        # Drizzle ORM schema and Zod validation schemas
 ```
@@ -127,6 +132,16 @@ All API endpoints are defined in [server/routes.ts](server/routes.ts). Key endpo
 - `GET /api/booking/:slotId` - Get booking information and SMART scheduling link
 - `POST /api/sync` - Manually trigger FHIR data sync
 - `GET /api/health` - Health check
+
+#### Smart Scheduler Agent Endpoints (A2A/MCP Integration)
+
+- `GET /api/smart-scheduler/.well-known/agent-card.json` - Agent discovery card
+- `POST /api/smart-scheduler/a2a` - A2A JSON-RPC 2.0 endpoint
+- `POST /api/smart-scheduler/search` - REST provider search
+- `GET /api/smart-scheduler/availability/:providerId` - REST availability lookup
+- `GET /api/smart-scheduler/booking/:slotId` - REST booking info
+- `GET /api/smart-scheduler/mcp/tools` - MCP tool definitions
+- `POST /api/smart-scheduler/mcp/tools` - MCP tool execution
 
 ### Frontend Data Flow
 
@@ -379,3 +394,113 @@ New fields added for Connectathon compliance in [shared/schema.ts](shared/schema
 6. Submit endpoints:
    - **Client**: `https://yourdomain.com` (UI)
    - **Slot Directory**: `https://yourdomain.com/fhir/$bulk-publish`
+
+## Agent-to-Agent (A2A) Integration
+
+This application integrates with the [AgentInterOp](https://github.com/aks129/AgentInterOp) framework to enable agent-to-agent communication for healthcare scheduling. The Smart Scheduler Agent allows AI agents to search for providers, check availability, and obtain booking links.
+
+### Agent Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                  Smart Scheduler Agent Layer                     │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
+│  │ SmartScheduler  │  │ A2A Router      │  │ Agent Card      │  │
+│  │ Agent Class     │  │ (JSON-RPC 2.0)  │  │ Discovery       │  │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘  │
+│  ┌─────────────────┐  ┌─────────────────┐                       │
+│  │ MCP Tools       │  │ REST Endpoints  │                       │
+│  │ (Claude)        │  │ (Direct API)    │                       │
+│  └─────────────────┘  └─────────────────┘                       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Key Files
+
+- **[server/agents/smart-scheduler.ts](server/agents/smart-scheduler.ts)**: Agent class with methods:
+  - `searchProviders()` - Search by specialty, location, insurance, languages
+  - `getAvailability()` - Get available slots for a provider
+  - `getBookingInfo()` - Get booking URL and phone number
+
+- **[server/agents/agent-card.json](server/agents/agent-card.json)**: A2A 0.2.9 compliant discovery card with protocol definitions and MCP tool schemas
+
+- **[server/routers/smart-scheduler-router.ts](server/routers/smart-scheduler-router.ts)**: Multi-protocol router exposing agent via REST, A2A, and MCP
+
+### A2A JSON-RPC Methods
+
+| Method             | Description                       |
+| ------------------ | --------------------------------- |
+| `message/send`     | Natural language message handling |
+| `search_providers` | Search with structured filters    |
+| `get_availability` | Get slots for provider            |
+| `get_booking`      | Get booking link/phone            |
+| `get_providers`    | List all providers                |
+| `get_locations`    | List all locations                |
+| `get_slots`        | List all slots with filters       |
+| `agent/info`       | Get agent capabilities            |
+
+### MCP Tools for Claude
+
+```json
+{
+  "tools": [
+    "search_healthcare_providers",
+    "get_provider_availability",
+    "get_appointment_booking_link"
+  ]
+}
+```
+
+### Testing the Agent
+
+1. **Agent Card Discovery**:
+   ```bash
+   curl http://localhost:5000/api/smart-scheduler/.well-known/agent-card.json
+   ```
+
+2. **REST Search**:
+   ```bash
+   curl -X POST http://localhost:5000/api/smart-scheduler/search \
+     -H "Content-Type: application/json" \
+     -d '{"specialty":"Dermatology","location":"Boston"}'
+   ```
+
+3. **A2A JSON-RPC**:
+   ```bash
+   curl -X POST http://localhost:5000/api/smart-scheduler/a2a \
+     -H "Content-Type: application/json" \
+     -d '{
+       "jsonrpc": "2.0",
+       "method": "search_providers",
+       "params": {"specialty": "Cardiology", "location": "02115"},
+       "id": 1
+     }'
+   ```
+
+4. **AgentInterOp UI**: Connect at <https://agent-inter-op.vercel.app/>
+
+### Demo Scenarios
+
+#### Scenario 1: Provider Discovery
+
+```text
+User: "Find me a dermatologist in the Boston area"
+Agent: Searches with specialty=Dermatology, location=Boston
+Returns: List of providers with availability summary
+```
+
+#### Scenario 2: Filtered Search
+
+```text
+User: "I need a Spanish-speaking cardiologist that accepts Medicare in 02115"
+Agent: Searches with specialty=Cardiology, languages=["Spanish"], insurance=["Medicare"], location=02115
+Returns: Matching providers with insurance details
+```
+
+#### Scenario 3: Booking Flow
+
+```text
+User: "Book the 2pm slot on Tuesday"
+Agent: Calls get_booking with slotId
+Returns: Booking deep-link URL and phone number
+```

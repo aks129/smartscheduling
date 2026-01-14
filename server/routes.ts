@@ -6,6 +6,7 @@ import axios from "axios";
 import * as cron from "node-cron";
 import swaggerUi from "swagger-ui-express";
 import { swaggerSpec } from "./swagger";
+import { smartSchedulerRouter } from "./routers/smart-scheduler-router";
 
 const FHIR_BASE_URL = "https://zocdoc-smartscheduling.netlify.app";
 
@@ -719,15 +720,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { slotId } = req.params;
       const slot = await storage.getSlot(slotId);
-      
+
       if (!slot) {
         return res.status(404).json({ message: 'Slot not found' });
       }
-      
+
       // Extract booking deep-link from FHIR extension
       let bookingLink = null;
       let bookingPhone = null;
-      
+
       if (slot.extension && Array.isArray(slot.extension)) {
         for (const ext of slot.extension) {
           if (ext.url === 'http://fhir-registry.smarthealthit.org/StructureDefinition/booking-deep-link') {
@@ -738,7 +739,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
       }
-      
+
       res.json({
         slotId,
         bookingLink,
@@ -749,6 +750,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Failed to get booking information' });
     }
   });
+
+  // ============================================
+  // Smart Scheduler Agent (A2A, REST, MCP)
+  // ============================================
+  app.use('/api/smart-scheduler', smartSchedulerRouter);
 
   const httpServer = createServer(app);
 
