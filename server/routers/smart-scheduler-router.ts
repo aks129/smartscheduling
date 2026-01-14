@@ -1,15 +1,247 @@
 import { Router, Request, Response } from "express";
 import { getSmartSchedulerAgent, type SearchRequest, type AvailabilityRequest, type BookingRequest } from "../agents/smart-scheduler";
-import { readFileSync } from "fs";
-import { join } from "path";
-import { fileURLToPath } from "url";
-import { dirname } from "path";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 // Create Express router
 export const smartSchedulerRouter = Router();
+
+// Agent card embedded directly to avoid file system issues in serverless environments
+const AGENT_CARD_BASE = {
+  "version": "0.2.9",
+  "name": "SMART Scheduling Agent",
+  "description": "Healthcare provider search and appointment scheduling agent. Search for providers by specialty, location, insurance, and languages. Check availability and get booking links for appointments.",
+  "role": "scheduling",
+  "protocolVersion": "0.2.9",
+  "url": "/api/smart-scheduler",
+  "protocols": {
+    "a2a": {
+      "version": "0.3.0",
+      "enabled": true,
+      "endpoint": "/api/smart-scheduler/a2a"
+    },
+    "mcp": {
+      "version": "1.0",
+      "enabled": true,
+      "endpoint": "/api/smart-scheduler/mcp/tools"
+    },
+    "rest": {
+      "version": "1.0",
+      "enabled": true,
+      "endpoints": {
+        "search": "/api/smart-scheduler/search",
+        "availability": "/api/smart-scheduler/availability/{providerId}",
+        "booking": "/api/smart-scheduler/booking/{slotId}"
+      }
+    }
+  },
+  "capabilities": {
+    "streaming": false,
+    "fhir": true,
+    "formats": ["application/json", "application/fhir+json"]
+  },
+  "skills": [
+    {
+      "id": "provider_search",
+      "name": "Search Healthcare Providers",
+      "description": "Search for healthcare providers by specialty, location, insurance, and languages spoken",
+      "methods": ["search_providers"],
+      "input": {
+        "type": "object",
+        "properties": {
+          "specialty": {
+            "type": "string",
+            "description": "Medical specialty (e.g., Dermatology, Cardiology, Primary Care)"
+          },
+          "location": {
+            "type": "string",
+            "description": "Location to search - can be city/state (e.g., 'Boston, MA') or zip code (e.g., '02115')"
+          },
+          "insurance": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Insurance types accepted (e.g., ['Medicare', 'Blue Cross Blue Shield'])"
+          },
+          "languages": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Languages spoken by provider (e.g., ['English', 'Spanish'])"
+          },
+          "dateFrom": {
+            "type": "string",
+            "format": "date",
+            "description": "Start date for availability search (ISO 8601)"
+          },
+          "dateTo": {
+            "type": "string",
+            "format": "date",
+            "description": "End date for availability search (ISO 8601)"
+          },
+          "appointmentType": {
+            "type": "string",
+            "description": "Type of appointment (e.g., 'Routine', 'Follow-up', 'New Patient', 'Urgent')"
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "practitioners": { "type": "array" },
+          "locations": { "type": "array" },
+          "availableSlots": { "type": "array" },
+          "totalProviders": { "type": "integer" },
+          "totalSlots": { "type": "integer" }
+        }
+      }
+    },
+    {
+      "id": "availability_lookup",
+      "name": "Get Provider Availability",
+      "description": "Get available appointment slots for a specific healthcare provider",
+      "methods": ["get_availability"],
+      "input": {
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": "string",
+            "description": "The unique identifier of the provider"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Start date for availability (defaults to today)"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date",
+            "description": "End date for availability (defaults to 30 days from start)"
+          }
+        },
+        "required": ["providerId"]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "providerId": { "type": "string" },
+          "slots": { "type": "array" },
+          "totalSlots": { "type": "integer" },
+          "availableSlots": { "type": "integer" }
+        }
+      }
+    },
+    {
+      "id": "booking_retrieval",
+      "name": "Get Booking Information",
+      "description": "Get booking URL and phone number for a specific appointment slot",
+      "methods": ["get_booking"],
+      "input": {
+        "type": "object",
+        "properties": {
+          "slotId": {
+            "type": "string",
+            "description": "The unique identifier of the appointment slot"
+          }
+        },
+        "required": ["slotId"]
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "slotId": { "type": "string" },
+          "bookingLink": { "type": "string" },
+          "bookingPhone": { "type": "string" },
+          "slot": { "type": "object" },
+          "instructions": { "type": "string" }
+        }
+      }
+    }
+  ],
+  "tools": [
+    {
+      "name": "search_healthcare_providers",
+      "type": "mcp",
+      "description": "Search for healthcare providers by specialty, location, insurance, and languages. Returns a list of matching providers with their available appointment slots.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "specialty": {
+            "type": "string",
+            "description": "Medical specialty to search for (e.g., 'Dermatology', 'Cardiology')"
+          },
+          "location": {
+            "type": "string",
+            "description": "Location - city/state or zip code (e.g., 'Boston, MA' or '02115')"
+          },
+          "insurance": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Insurance types to filter by"
+          },
+          "languages": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Languages spoken by provider"
+          },
+          "dateFrom": {
+            "type": "string",
+            "description": "Start date (ISO 8601)"
+          },
+          "dateTo": {
+            "type": "string",
+            "description": "End date (ISO 8601)"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_provider_availability",
+      "type": "mcp",
+      "description": "Get available appointment slots for a specific healthcare provider within a date range.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": "string",
+            "description": "The provider's unique identifier"
+          },
+          "startDate": {
+            "type": "string",
+            "description": "Start date for availability search (ISO 8601)"
+          },
+          "endDate": {
+            "type": "string",
+            "description": "End date for availability search (ISO 8601)"
+          }
+        },
+        "required": ["providerId"]
+      }
+    },
+    {
+      "name": "get_appointment_booking_link",
+      "type": "mcp",
+      "description": "Get the booking URL or phone number for a specific appointment slot. Use this after selecting a slot to complete the booking process.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "slotId": {
+            "type": "string",
+            "description": "The unique identifier of the selected appointment slot"
+          }
+        },
+        "required": ["slotId"]
+      }
+    }
+  ],
+  "specialization": {
+    "domain": "healthcare_scheduling",
+    "standards": ["FHIR R4", "SMART Scheduling Links"],
+    "dataTypes": ["Location", "PractitionerRole", "Schedule", "Slot"]
+  },
+  "samplePrompts": [
+    "Find me a dermatologist in the Boston area",
+    "I need a Spanish-speaking cardiologist that accepts Medicare",
+    "What appointments are available for Dr. Smith next week?",
+    "Book the 2pm appointment slot on Tuesday"
+  ]
+};
 
 // Helper to generate unique IDs
 function generateId(): string {
@@ -33,11 +265,12 @@ function generateId(): string {
  */
 smartSchedulerRouter.get('/.well-known/agent-card.json', (req: Request, res: Response) => {
   try {
-    const agentCardPath = join(__dirname, '../agents/agent-card.json');
-    const agentCard = JSON.parse(readFileSync(agentCardPath, 'utf-8'));
+    // Clone the base agent card and update URLs with actual host
+    const agentCard = JSON.parse(JSON.stringify(AGENT_CARD_BASE));
 
-    // Update URLs with actual host
-    const protocol = req.protocol;
+    // Determine protocol - check x-forwarded-proto header for reverse proxy scenarios
+    const forwardedProto = req.get('x-forwarded-proto');
+    const protocol = forwardedProto || req.protocol;
     const host = req.get('host');
     const baseUrl = `${protocol}://${host}`;
 
